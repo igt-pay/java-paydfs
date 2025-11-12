@@ -1,0 +1,49 @@
+services:
+  pay-dfs-mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql-2022
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-IGTtest1}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - ./pay-dfs-mssql:/var/opt/mssql
+    healthcheck:
+      # sqlcmd for 2022 image is in /opt/mssql-tools18/bin
+      test: [ "CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P \"$${MSSQL_SA_PASSWORD}\" -C -Q \"SELECT 1\" >/dev/null 2>&1 || exit 1" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  pay-dfs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spring-app
+    depends_on:
+      pay-dfs-mssql:
+        condition: service_healthy
+    environment:
+      # Spring Boot datasource settings (override via .env if you like)
+      SPRING_DATASOURCE_URL: "jdbc:sqlserver://mssql:1433;databaseName=paydfs;encrypt=true;trustServerCertificate=true"
+      SPRING_DATASOURCE_USERNAME: "SA"
+      SPRING_DATASOURCE_PASSWORD: "${MSSQL_SA_PASSWORD:-IGTtest1}"
+      # Optional Hibernate behavior:
+      # SPRING_JPA_HIBERNATE_DDL_AUTO: "none"
+    ports:
+      - "8080:8080"
+    # Optional: app health check (requires actuator)
+    # healthcheck:
+    #   test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+    #   interval: 10s
+    #   timeout: 3s
+    #   retries: 12
+    restart: unless-stopped
+
+volumes:
+  mssql_data:
+    driver: local
